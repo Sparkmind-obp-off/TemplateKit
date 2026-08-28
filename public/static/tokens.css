@@ -1,0 +1,107 @@
+/**
+ * TemplateKit — Design Tokens
+ * Ref: DOC 08 §36–§44, §55
+ * Rule: 1 primary brand color + semantic colors. Single font family.
+ */
+
+:root {
+  /* ── Color: Neutral ─────────────────────────────────────────────── */
+  --tk-bg: #f7f7fa;
+  --tk-bg-subtle: #f0f0f5;
+  --tk-surface: #ffffff;
+  --tk-surface-muted: #fafafc;
+  --tk-text: #14151a;
+  --tk-text-secondary: #5b5e6b;
+  --tk-text-tertiary: #8a8d99;
+  --tk-border: #e4e4ec;
+  --tk-border-strong: #d2d2de;
+
+  /* ── Color: Brand accent (single) ───────────────────────────────── */
+  --tk-accent: #5b47fb;
+  --tk-accent-hover: #4a37e6;
+  --tk-accent-active: #3f2ecf;
+  --tk-accent-soft: #eeebff;
+  --tk-accent-border: #d6cfff;
+  --tk-accent-text: #4335c4;
+
+  /* ── Color: Semantic ───────────────────────────────────────────── */
+  --tk-success: #12a150;
+  --tk-success-soft: #e6f6ec;
+  --tk-error: #d92d20;
+  --tk-error-soft: #fdecea;
+  --tk-warning: #b54708;
+
+  /* ── Typography (single family) ─────────────────────────────────── */
+  --tk-font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+  --tk-fs-display: 2.5rem;
+  --tk-fs-h1: 2rem;
+  --tk-fs-h2: 1.5rem;
+  --tk-fs-h3: 1.125rem;
+  --tk-fs-body: 1rem;
+  --tk-fs-small: 0.875rem;
+  --tk-fs-caption: 0.75rem;
+
+  --tk-lh-tight: 1.2;
+  --tk-lh-snug: 1.35;
+  --tk-lh-normal: 1.6;
+
+  --tk-fw-regular: 400;
+  --tk-fw-medium: 500;
+  --tk-fw-semibold: 600;
+  --tk-fw-bold: 700;
+  --tk-fw-extrabold: 800;
+
+  /* ── Spacing scale (DOC 08 §41) ─────────────────────────────────── */
+  --tk-sp-1: 4px;
+  --tk-sp-2: 8px;
+  --tk-sp-3: 12px;
+  --tk-sp-4: 16px;
+  --tk-sp-6: 24px;
+  --tk-sp-8: 32px;
+  --tk-sp-12: 48px;
+  --tk-sp-16: 64px;
+  --tk-sp-24: 96px;
+
+  /* ── Radius (DOC 08 §42) ────────────────────────────────────────── */
+  --tk-radius-sm: 8px;
+  --tk-radius-md: 12px;
+  --tk-radius-lg: 18px;
+  --tk-radius-pill: 999px;
+
+  /* ── Shadow: minimal, untuk hierarchy bukan dekorasi (§43) ──────── */
+  --tk-shadow-sm: 0 1px 2px rgba(20, 21, 26, 0.05);
+  --tk-shadow-md: 0 4px 14px rgba(20, 21, 26, 0.07);
+  --tk-shadow-accent: 0 6px 18px rgba(91, 71, 251, 0.22);
+
+  /* ── Border ─────────────────────────────────────────────────────── */
+  --tk-border-width: 1px;
+
+  /* ── Motion: subtle, fast, functional (§55) ─────────────────────── */
+  --tk-motion-fast: 120ms;
+  --tk-motion-base: 180ms;
+  --tk-motion-slow: 260ms;
+  --tk-ease: cubic-bezier(0.2, 0.8, 0.3, 1);
+
+  /* ── Layout ─────────────────────────────────────────────────────── */
+  --tk-container: 1120px;
+  --tk-container-narrow: 760px;
+  --tk-touch-target: 44px;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --tk-fs-display: 3.25rem;
+    --tk-fs-h1: 2.5rem;
+    --tk-fs-h2: 1.875rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --tk-motion-fast: 0ms;
+    --tk-motion-base: 0ms;
+    --tk-motion-slow: 0ms;
+  }
+}

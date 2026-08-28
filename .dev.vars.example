@@ -1,0 +1,8 @@
+# Template untuk .dev.vars (local development).
+# Salin ke .dev.vars lalu isi nilainya. JANGAN commit .dev.vars.
+#
+# Biarkan OPENAI_API_KEY kosong → generator memakai template engine lokal
+# (deterministik, tanpa AI). Isi dengan kunci valid → mode AI aktif.
+OPENAI_API_KEY=
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-5-mini
