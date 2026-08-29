@@ -30,10 +30,14 @@
     generationId: null,
     input: null,
     hooks: [],
-    loading: false
+    loading: false,
+    engine: null
   }
 
   var A = window.TKAnalytics || { track: function () {}, sessionId: 'anon', source: null }
+
+  var HISTORY_KEY = 'tk_history_v1'
+  var HISTORY_MAX = 30
 
   // ── Helpers ────────────────────────────────────────────────────────
 
@@ -147,6 +151,125 @@
     }
   }
 
+  // ── Local history (localStorage, tanpa server) ─────────────────────
+
+  function readHistory() {
+    try {
+      var raw = window.localStorage.getItem(HISTORY_KEY)
+      var arr = raw ? JSON.parse(raw) : []
+      return Object.prototype.toString.call(arr) === '[object Array]' ? arr : []
+    } catch (e) {
+      return []
+    }
+  }
+
+  function pushHistory(hooks, input) {
+    try {
+      var list = readHistory()
+      hooks.forEach(function (h) {
+        list.unshift({
+          text: h.text,
+          framework: h.framework || '',
+          topic: input.topic,
+          at: Date.now()
+        })
+      })
+      // dedupe by text
+      var seen = {}
+      list = list.filter(function (it) {
+        var k = String(it.text).toLowerCase()
+        if (seen[k]) return false
+        seen[k] = true
+        return true
+      })
+      window.localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, HISTORY_MAX)))
+      renderHistory()
+    } catch (e) {
+      /* localStorage penuh / diblokir — abaikan */
+    }
+  }
+
+  function clearHistory() {
+    try {
+      window.localStorage.removeItem(HISTORY_KEY)
+    } catch (e) {}
+    renderHistory()
+  }
+
+  function renderHistory() {
+    var box = document.getElementById('history-area')
+    if (!box) return
+    var list = readHistory()
+    if (list.length === 0) {
+      box.innerHTML = ''
+      return
+    }
+    box.innerHTML =
+      '<div class="tk-history">' +
+      '<div class="tk-history__head">' +
+      '<h3 class="tk-history__title">Hook tersimpan di perangkat ini (' + list.length + ')</h3>' +
+      '<button type="button" class="tk-btn tk-btn--tertiary tk-btn--sm" id="history-clear">Hapus semua</button>' +
+      '</div><ul class="tk-history__list">' +
+      list
+        .slice(0, 10)
+        .map(function (it) {
+          return (
+            '<li class="tk-history__item">' +
+            '<span class="tk-history__text">' + esc(it.text) + '</span>' +
+            '<span class="tk-history__meta">' + esc(it.topic || '') + '</span>' +
+            '</li>'
+          )
+        })
+        .join('') +
+      '</ul></div>'
+
+    var btn = document.getElementById('history-clear')
+    if (btn) {
+      btn.addEventListener('click', function () {
+        clearHistory()
+        showToast('Riwayat dihapus')
+      })
+    }
+  }
+
+  // ── Export helpers ─────────────────────────────────────────────────
+
+  function allHooksAsText() {
+    return state.hooks
+      .map(function (h, i) {
+        return i + 1 + '. ' + h.text
+      })
+      .join('\n')
+  }
+
+  function downloadTxt() {
+    var input = state.input || { topic: 'hook', audience: '' }
+    var header =
+      'TemplateKit — TikTok Hook Generator\n' +
+      'Topik: ' + input.topic + '\n' +
+      'Audience: ' + input.audience + '\n' +
+      'Dibuat: ' + new Date().toLocaleString('id-ID') + '\n' +
+      '\n----------------------------------------\n\n'
+    var blob = new Blob([header + allHooksAsText() + '\n'], {
+      type: 'text/plain;charset=utf-8'
+    })
+    var url = URL.createObjectURL(blob)
+    var a = document.createElement('a')
+    var slug = String(input.topic || 'hook')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 40)
+    a.href = url
+    a.download = 'templatekit-hook-' + (slug || 'hook') + '.txt'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(function () {
+      URL.revokeObjectURL(url)
+    }, 1000)
+  }
+
   function renderResults(isAppend) {
     var hooks = state.hooks
     var cards = hooks
@@ -181,10 +304,25 @@
       })
       .join('')
 
+    var engineBadge =
+      state.engine === 'template'
+        ? '<span class="tk-badge tk-badge--neutral" title="Dibuat dari template library — AI provider sedang tidak tersedia">Template engine</span>'
+        : state.engine === 'ai'
+          ? '<span class="tk-badge">AI engine</span>'
+          : ''
+
     resultArea.innerHTML =
       '<div class="tk-results__head">' +
+      '<div>' +
       '<h2 class="tk-results__title">Hasil Hook</h2>' +
-      '<p class="tk-results__meta" role="status">' + hooks.length + ' hook siap dipakai</p>' +
+      '<p class="tk-results__meta" role="status">' + hooks.length + ' hook siap dipakai ' + engineBadge + '</p>' +
+      '</div>' +
+      '<div class="tk-results__tools">' +
+      '<button type="button" class="tk-btn tk-btn--secondary tk-btn--sm" id="copy-all-btn">' +
+      icon('copy') + '<span>Copy Semua</span></button>' +
+      '<button type="button" class="tk-btn tk-btn--tertiary tk-btn--sm" id="download-btn">' +
+      icon('download') + '<span>.txt</span></button>' +
+      '</div>' +
       '</div>' +
       '<div class="tk-results__list">' + cards + '</div>' +
       '<div class="tk-results__actions">' +
@@ -204,6 +342,27 @@
   }
 
   function bindResultActions() {
+    // Copy Semua
+    var copyAll = document.getElementById('copy-all-btn')
+    if (copyAll) {
+      copyAll.addEventListener('click', function () {
+        copyText(allHooksAsText(), function (ok) {
+          showToast(ok ? state.hooks.length + ' hook dicopy ✓' : 'Gagal copy. Coba salin manual.')
+          if (ok) A.track('copy_click', state.generationId, { mode: 'all', total: state.hooks.length })
+        })
+      })
+    }
+
+    // Download .txt
+    var dl = document.getElementById('download-btn')
+    if (dl) {
+      dl.addEventListener('click', function () {
+        downloadTxt()
+        showToast('File .txt diunduh ✓')
+        A.track('copy_click', state.generationId, { mode: 'download', total: state.hooks.length })
+      })
+    }
+
     // Copy (DOC 08 §24)
     var copyBtns = resultArea.querySelectorAll('[data-copy-index]')
     Array.prototype.forEach.call(copyBtns, function (btn) {
@@ -396,6 +555,8 @@
 
         if (r.status === 200 && r.data && r.data.hooks) {
           state.generationId = r.data.generationId
+          state.engine = r.data.engine || null
+          pushHistory(r.data.hooks, input)
           if (isMore) {
             // Generate More: tambahkan hook baru di bawah
             var seen = {}
@@ -458,7 +619,8 @@
       down: '<path d="M17 14V3"/><path d="M13 20.5 17 14H7.4a2 2 0 0 1-2-2.3l1.1-6.4a2 2 0 0 1 2-1.7H17"/>',
       sparkle:
         '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.5 6.5l2.5 2.5M15 15l2.5 2.5M17.5 6.5 15 9M9 15l-2.5 2.5"/>',
-      alert: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>'
+      alert: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>',
+      download: '<path d="M12 3v12"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M4 20h16"/>'
     }
     return (
       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
@@ -483,15 +645,47 @@
     }
   })
 
+  // Quick-fill chips contoh
+  var chipBox = document.getElementById('example-chips')
+  if (chipBox) {
+    Array.prototype.forEach.call(chipBox.querySelectorAll('[data-example]'), function (chip) {
+      chip.addEventListener('click', function () {
+        var data
+        try {
+          data = JSON.parse(chip.getAttribute('data-example'))
+        } catch (e) {
+          return
+        }
+        fields.topic.value = data.topic || ''
+        fields.audience.value = data.audience || ''
+        if (fields.contentType && data.contentType) fields.contentType.value = data.contentType
+        clearErrors()
+        fields.topic.focus()
+        showToast('Contoh dimuat — tekan Generate')
+      })
+    })
+  }
+
   // Prefill dari query string (dipakai CTA TikTok / demo)
   try {
     var q = new URLSearchParams(window.location.search)
     if (q.get('topic')) fields.topic.value = q.get('topic').slice(0, 200)
     if (q.get('audience')) fields.audience.value = q.get('audience').slice(0, 200)
+    if (q.get('tone') && fields.tone) fields.tone.value = q.get('tone')
+    if (q.get('type') && fields.contentType) fields.contentType.value = q.get('type')
   } catch (e) {
     /* ignore */
   }
 
   renderEmpty()
+  renderHistory()
   A.track('generator_view', null, { path: window.location.pathname })
+
+  // Ctrl/Cmd + Enter untuk generate cepat
+  document.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault()
+      runGenerate(false)
+    }
+  })
 })()

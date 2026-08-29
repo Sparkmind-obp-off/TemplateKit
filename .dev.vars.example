@@ -1,8 +1,26 @@
 # Template untuk .dev.vars (local development).
 # Salin ke .dev.vars lalu isi nilainya. JANGAN commit .dev.vars.
 #
-# Biarkan OPENAI_API_KEY kosong → generator memakai template engine lokal
-# (deterministik, tanpa AI). Isi dengan kunci valid → mode AI aktif.
+# Semua provider bersifat OPSIONAL. Jika tidak ada satu pun yang diisi,
+# generator tetap berjalan memakai template engine lokal (deterministik).
+#
+# Untuk PRODUCTION, kunci disimpan sebagai Cloudflare secret:
+#   npx wrangler pages secret put GROQ_API_KEY --project-name templatekit
+
+# Urutan failover provider (dipisah koma).
+AI_PROVIDER_ORDER=groq,openrouter
+
+# ── Groq Console — https://console.groq.com/keys ──────────────────────
+GROQ_API_KEY=
+GROQ_BASE_URL=https://api.groq.com/openai/v1
+GROQ_MODEL=openai/gpt-oss-120b
+
+# ── OpenRouter — https://openrouter.ai/keys ───────────────────────────
+OPENROUTER_API_KEY=
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct
+
+# ── Generic OpenAI-compatible (opsional) ──────────────────────────────
 OPENAI_API_KEY=
 OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_MODEL=gpt-5-mini
+OPENAI_MODEL=gpt-4o-mini

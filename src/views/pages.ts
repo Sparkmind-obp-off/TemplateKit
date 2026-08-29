@@ -39,6 +39,7 @@ export function landingPage(): string {
             <div class="tk-card"><div class="tk-card__body">${generatorForm()}</div></div>
           </div>
           <div id="result-area" aria-live="polite"></div>
+          <div id="history-area"></div>
         </div>
       </div>
     </section>
@@ -150,6 +151,7 @@ export function generatorPage(): string {
             <div class="tk-card"><div class="tk-card__body">${generatorForm()}</div></div>
           </div>
           <div id="result-area" aria-live="polite"></div>
+          <div id="history-area"></div>
         </div>
       </div>
     </section>`

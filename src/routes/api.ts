@@ -5,20 +5,32 @@
  * POST /api/generate  — generate hooks (juga dipakai untuk regenerate)
  * POST /api/feedback  — feedback hook
  * POST /api/event     — analytics event
- * GET  /api/health    — health check
+ * GET  /api/health    — health check + status provider
+ * GET  /api/meta      — enum untuk frontend
  * GET  /api/stats     — funnel summary (internal validation)
  */
 
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import type { Bindings } from '../types'
-import { validateGenerateRequest, validateFeedbackRequest, validateAnalyticsEvent } from '../lib/validation'
-import { buildIdentity, checkRateLimit } from '../lib/rate-limit'
-import { saveEvent, saveFeedback, saveGeneration, saveFailedGeneration, getFunnelStats } from '../lib/persistence'
+import {
+  validateGenerateRequest,
+  validateFeedbackRequest,
+  validateAnalyticsEvent
+} from '../lib/validation'
+import { buildIdentity, checkRateLimit, GENERATE_RATE_LIMIT } from '../lib/rate-limit'
+import {
+  saveEvent,
+  saveFeedback,
+  saveGeneration,
+  saveFailedGeneration,
+  getFunnelStats
+} from '../lib/persistence'
 import { buildContext } from '../modules/hook-generator/domain/context'
 import { generateHooks, QualityFailedError } from '../modules/hook-generator/application/generate-hooks'
 import {
-  OpenAICompatibleProvider,
+  createProviderChain,
+  describeProviderStatus,
   ProviderError,
   ProviderTimeoutError
 } from '../modules/hook-generator/infrastructure/ai-provider'
@@ -55,12 +67,26 @@ function errorJson(c: any, status: number, err: APIError, requestId: string) {
 
 // ── GET /api/health (DOC 07 §61) ─────────────────────────────────────────
 
-api.get('/health', (c) => c.json({ status: 'ok', service: 'templatekit', version: '1.0.0' }))
+api.get('/health', (c) => {
+  const providers = describeProviderStatus(c.env)
+  const aiReady = providers.some((p) => p.configured)
+
+  return c.json({
+    status: 'ok',
+    service: 'templatekit',
+    version: '1.1.0',
+    engine: aiReady ? 'ai+template-fallback' : 'template-only',
+    database: c.env.DB ? 'connected' : 'unavailable',
+    providers
+  })
+})
 
 // ── GET /api/meta — enum untuk frontend (single source of truth) ─────────
 
 api.get('/meta', async (c) => {
-  const { CONTENT_TYPES, TONES, HOOK_COUNTS } = await import('../modules/hook-generator/domain/types')
+  const { CONTENT_TYPES, TONES, HOOK_COUNTS, FEEDBACK_REASONS } = await import(
+    '../modules/hook-generator/domain/types'
+  )
   const { FRAMEWORKS, TONE_GUIDE } = await import('../modules/hook-generator/templates/frameworks')
 
   const CONTENT_TYPE_LABELS: Record<string, string> = {
@@ -72,15 +98,25 @@ api.get('/meta', async (c) => {
     storytelling: 'Storytelling'
   }
 
+  const REASON_LABELS: Record<string, string> = {
+    too_generic: 'Terlalu generik',
+    not_relevant: 'Tidak relevan',
+    too_long: 'Terlalu panjang',
+    unnatural: 'Terasa tidak natural',
+    other: 'Lainnya'
+  }
+
   return c.json({
     contentTypes: CONTENT_TYPES.map((v) => ({ value: v, label: CONTENT_TYPE_LABELS[v] ?? v })),
     tones: TONES.map((v) => ({ value: v, label: TONE_GUIDE[v].label })),
     counts: HOOK_COUNTS,
+    feedbackReasons: FEEDBACK_REASONS.map((v) => ({ value: v, label: REASON_LABELS[v] ?? v })),
     frameworks: Object.values(FRAMEWORKS).map((f) => ({
       id: f.id,
       name: f.name,
       objective: f.objective
-    }))
+    })),
+    rateLimit: { limit: GENERATE_RATE_LIMIT.limit, windowMinutes: GENERATE_RATE_LIMIT.windowMs / 60000 }
   })
 })
 
@@ -112,25 +148,24 @@ api.post('/generate', async (c) => {
     return errorJson(
       c,
       429,
-      { code: 'RATE_LIMITED', message: 'Batas penggunaan tercapai. Coba lagi nanti.' },
+      {
+        code: 'RATE_LIMITED',
+        message: `Batas penggunaan tercapai. Coba lagi dalam ${formatRetry(rl.retryAfterSeconds)}.`
+      },
       requestId
     )
   }
 
   const isRegenerate = (input.excludeHooks?.length ?? 0) > 0
 
-  // 3. Provider (opsional). Kalau tidak dikonfigurasi, generation tetap jalan
-  //    lewat template engine lokal — DOC 05 §3 "Template First, AI Second".
-  let provider: OpenAICompatibleProvider | null = null
-  try {
-    provider = new OpenAICompatibleProvider({
-      OPENAI_API_KEY: c.env.OPENAI_API_KEY,
-      OPENAI_BASE_URL: c.env.OPENAI_BASE_URL,
-      OPENAI_MODEL: c.env.OPENAI_MODEL
-    })
-  } catch {
-    console.warn(`[${requestId}] AI provider not configured — using local template engine`)
-    provider = null
+  // 3. Provider chain (opsional). Kalau tidak ada yang dikonfigurasi,
+  //    generation tetap jalan lewat template engine lokal
+  //    — DOC 05 §3 "Template First, AI Second".
+  const provider = createProviderChain(c.env, (attempt) =>
+    console.warn(`[${requestId}] provider attempt failed provider=${attempt.provider} err=${attempt.error}`)
+  )
+  if (!provider) {
+    console.warn(`[${requestId}] no AI provider configured — using local template engine`)
   }
 
   // 4. Generate
@@ -139,7 +174,7 @@ api.post('/generate', async (c) => {
       provider,
       onProviderError: (err) =>
         console.warn(
-          `[${requestId}] provider failed, falling back to template engine — ${String(
+          `[${requestId}] all providers failed, falling back to template engine — ${String(
             (err as Error)?.message ?? err
           )}`
         )
@@ -165,6 +200,7 @@ api.post('/generate', async (c) => {
           tone: outcome.context.tone,
           regenerate: isRegenerate,
           engine: outcome.engine,
+          provider: outcome.providerUsed ?? 'local',
           totalTokens: outcome.usage?.totalTokens ?? 0
         }
       },
@@ -172,13 +208,16 @@ api.post('/generate', async (c) => {
     )
 
     console.log(
-      `[${requestId}] generation success generationId=${outcome.generationId} engine=${outcome.engine} hooks=${outcome.responseHooks.length} tokens=${outcome.usage?.totalTokens ?? '-'}`
+      `[${requestId}] generation success id=${outcome.generationId} engine=${outcome.engine} provider=${outcome.providerUsed ?? 'local'} hooks=${outcome.responseHooks.length} tokens=${outcome.usage?.totalTokens ?? '-'}`
     )
+
+    c.header('X-TK-Remaining', String(rl.remaining))
 
     // DOC 07 §22 — GenerateHookResponse
     return c.json({
       generationId: outcome.generationId,
       status: 'success' as const,
+      engine: outcome.engine,
       hooks: outcome.responseHooks
     })
   } catch (err) {
@@ -273,5 +312,12 @@ api.get('/stats', async (c) => {
   if (!stats) return c.json({ status: 'unavailable', message: 'Analytics belum tersedia.' }, 200)
   return c.json({ status: 'ok', ...stats })
 })
+
+function formatRetry(seconds: number): string {
+  if (seconds < 60) return `${seconds} detik`
+  const m = Math.ceil(seconds / 60)
+  if (m < 60) return `${m} menit`
+  return `${Math.ceil(m / 60)} jam`
+}
 
 export default api

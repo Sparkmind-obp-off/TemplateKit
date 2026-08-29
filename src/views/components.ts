@@ -30,7 +30,26 @@ export function generatorForm(): string {
     (v) => `<option value="${v}"${v === 5 ? ' selected' : ''}>${v} hook</option>`
   ).join('')
 
+  const examples = [
+    { topic: 'Sepatu lari', audience: 'Pemula yang baru mulai olahraga', contentType: 'product_review' },
+    { topic: 'Skincare untuk kulit berminyak', audience: 'Mahasiswa budget terbatas', contentType: 'educational' },
+    { topic: 'Jualan di TikTok Shop', audience: 'UMKM yang baru mulai online', contentType: 'tutorial' },
+    { topic: 'Belajar coding', audience: 'Fresh graduate non-IT', contentType: 'storytelling' }
+  ]
+
+  const exampleChips = examples
+    .map(
+      (e) =>
+        `<button type="button" class="tk-chip" data-example='${JSON.stringify(e).replace(/'/g, '&#39;')}'>${e.topic}</button>`
+    )
+    .join('')
+
   return `<form class="tk-form" id="generator-form" novalidate>
+    <div class="tk-examples" id="example-chips">
+      <p class="tk-examples__label">Coba contoh cepat</p>
+      <div class="tk-examples__list">${exampleChips}</div>
+    </div>
+
     <div class="tk-field" id="field-wrap-topic" data-error="false">
       <label class="tk-field__label" for="field-topic">Topik / Produk <span class="tk-req" aria-hidden="true">*</span></label>
       <input class="tk-input" type="text" id="field-topic" name="topic" maxlength="200"
